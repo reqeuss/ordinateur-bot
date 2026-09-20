@@ -1,1 +1,118 @@
-import random\nimport discord\nfrom discord import app_commands\nfrom discord.ext import commands\n\nclass Extras(commands.Cog):\n    def __init__(self, bot):\n        self.bot = bot\n\n    @app_commands.command(name="flip", description="Lancer une pièce.")\n    async def flip(self, interaction):\n        await interaction.response.send_message(random.choice(["🪙 **Pile !**", "🪙 **Face !**"]))\n\n    @app_commands.command(name="dice", description="Lancer un dé.")\n    async def dice(self, interaction, sides: app_commands.Range[int, 2, 100] = 6):\n        await interaction.response.send_message(f"🎲 Tu obtiens **{random.randint(1, sides)}** sur un dé à **{sides}** faces.")\n\n    @app_commands.command(name="rps", description="Jouer à pierre-feuille-ciseaux.")\n    async def rps(self, interaction, choice: str):\n        choices = {"pierre":"🪨","feuille":"📄","ciseaux":"✂️"}\n        c = choice.lower()\n        if c not in choices:\n            return await interaction.response.send_message("❌ Choisis `pierre`, `feuille` ou `ciseaux`.", ephemeral=True)\n        bot = random.choice(list(choices))\n        result = "🤝 Égalité !" if c == bot else ("🎉 Tu gagnes !" if (c, bot) in {("pierre","ciseaux"),("feuille","pierre"),("ciseaux","feuille")} else "😅 Tu perds !")\n        await interaction.response.send_message(f"🪨📄✂️ Toi : {choices[c]} **{c}**\nOrdinateur : {choices[bot]} **{bot}**\n\n{result}")\n\n    @app_commands.command(name="random", description="Choisir un nombre aléatoire.")\n    async def random_number(self, interaction, minimum: int = 1, maximum: int = 100):\n        if minimum > maximum: minimum, maximum = maximum, minimum\n        await interaction.response.send_message(f"🎯 Résultat : **{random.randint(minimum, maximum)}**")\n\n    @app_commands.command(name="8ball", description="Poser une question à la boule magique.")\n    async def eightball(self, interaction, question: str):\n        answers = ["🔮 Oui.", "🔮 Non.", "🔮 Probablement.", "🔮 Pas impossible.", "🔮 Demande-moi plus tard.", "🔮 Les étoiles sont silencieuses."]\n        await interaction.response.send_message(f"🔮 **{question}**\n{random.choice(answers)}")\n\n    @app_commands.command(name="rate", description="Donner une note amusante.")\n    async def rate(self, interaction, thing: str):\n        await interaction.response.send_message(f"📊 **{thing}** obtient **{random.randint(0,100)}%** aujourd’hui.")\n\n    @app_commands.command(name="choose", description="Choisir entre plusieurs propositions.")\n    async def choose(self, interaction, options: str):\n        values = [x.strip() for x in options.split(",") if x.strip()]\n        if len(values) < 2: return await interaction.response.send_message("❌ Donne au moins deux choix séparés par des virgules.", ephemeral=True)\n        await interaction.response.send_message(f"🎯 Je choisis : **{random.choice(values)}**")\n\n    @app_commands.command(name="cookiegift", description="Offrir quelques Cookies à un membre.")\n    async def cookiegift(self, interaction, member: discord.Member):\n        if member.bot or member.id == interaction.user.id: return await interaction.response.send_message("❌ Cible invalide.", ephemeral=True)\n        amount = random.randint(10, 40)\n        await self.bot.db.change_money(interaction.guild.id, member.id, amount)\n        await interaction.response.send_message(f"🎁 {member.mention} reçoit **{amount}** 🍪 de la part de {interaction.user.mention} !")\n\nasync def setup(bot):\n    await bot.add_cog(Extras(bot))\n
+import random
+import discord
+from discord import app_commands
+from discord.ext import commands
+
+
+class Extras(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @app_commands.command(name="flip", description="Lancer une pièce.")
+    async def flip(self, interaction):
+        await interaction.response.send_message(
+            random.choice(["🪙 **Pile !**", "🪙 **Face !**"])
+        )
+
+    @app_commands.command(name="dice", description="Lancer un dé.")
+    async def dice(self, interaction, sides: app_commands.Range[int, 2, 100] = 6):
+        result = random.randint(1, sides)
+        await interaction.response.send_message(
+            f"🎲 Tu obtiens **{result}** sur un dé à **{sides}** faces."
+        )
+
+    @app_commands.command(name="rps", description="Jouer à pierre-feuille-ciseaux.")
+    async def rps(self, interaction, choice: str):
+        choices = {"pierre": "🪨", "feuille": "📄", "ciseaux": "✂️"}
+        c = choice.lower().strip()
+
+        if c not in choices:
+            await interaction.response.send_message(
+                "❌ Choisis pierre, feuille ou ciseaux.",
+                ephemeral=True,
+            )
+            return
+
+        bot_choice = random.choice(list(choices))
+
+        if c == bot_choice:
+            result = "🤝 Égalité !"
+        elif (
+            (c == "pierre" and bot_choice == "ciseaux")
+            or (c == "feuille" and bot_choice == "pierre")
+            or (c == "ciseaux" and bot_choice == "feuille")
+        ):
+            result = "🎉 Tu gagnes !"
+        else:
+            result = "😅 Tu perds !"
+
+        await interaction.response.send_message(
+            f"🪨📄✂️ Toi : {choices[c]} **{c}**\n"
+            f"Ordinateur : {choices[bot_choice]} **{bot_choice}**\n\n"
+            f"{result}"
+        )
+
+    @app_commands.command(name="random", description="Choisir un nombre aléatoire.")
+    async def random_number(self, interaction, minimum: int = 1, maximum: int = 100):
+        if minimum > maximum:
+            minimum, maximum = maximum, minimum
+
+        result = random.randint(minimum, maximum)
+        await interaction.response.send_message(f"🎯 Résultat : **{result}**")
+
+    @app_commands.command(name="8ball", description="Poser une question à la boule magique.")
+    async def eightball(self, interaction, question: str):
+        answers = [
+            "🔮 Oui.",
+            "🔮 Non.",
+            "🔮 Probablement.",
+            "🔮 Pas impossible.",
+            "🔮 Demande-moi plus tard.",
+            "🔮 Les étoiles sont silencieuses.",
+        ]
+        await interaction.response.send_message(
+            f"🔮 **{question}**\n{random.choice(answers)}"
+        )
+
+    @app_commands.command(name="rate", description="Donner une note amusante.")
+    async def rate(self, interaction, thing: str):
+        score = random.randint(0, 100)
+        await interaction.response.send_message(
+            f"📊 **{thing}** obtient **{score}%** aujourd’hui."
+        )
+
+    @app_commands.command(name="choose", description="Choisir entre plusieurs propositions.")
+    async def choose(self, interaction, options: str):
+        values = [value.strip() for value in options.split(",") if value.strip()]
+
+        if len(values) < 2:
+            await interaction.response.send_message(
+                "❌ Donne au moins deux choix séparés par des virgules.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_message(
+            f"🎯 Je choisis : **{random.choice(values)}**"
+        )
+
+    @app_commands.command(name="cookiegift", description="Offrir quelques Cookies à un membre.")
+    async def cookiegift(self, interaction, member: discord.Member):
+        if member.bot or member.id == interaction.user.id:
+            await interaction.response.send_message(
+                "❌ Cible invalide.",
+                ephemeral=True,
+            )
+            return
+
+        amount = random.randint(10, 40)
+        await self.bot.db.change_money(interaction.guild.id, member.id, amount)
+
+        await interaction.response.send_message(
+            f"🎁 {member.mention} reçoit **{amount}** 🍪 "
+            f"de la part de {interaction.user.mention} !"
+        )
+
+
+async def setup(bot):
+    await bot.add_cog(Extras(bot))
