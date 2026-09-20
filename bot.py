@@ -26,7 +26,7 @@ class Ordinateur(commands.Bot):
         await self.db.init()
         extensions = [
             "cogs.core", "cogs.economy", "cogs.levels", "cogs.moderation",
-            "cogs.cafe", "cogs.tickets", "cogs.server", "cogs.giveaways"
+            "cogs.cafe", "cogs.tickets", "cogs.server", "cogs.giveaways", "cogs.extras"
         ]
         for ext in extensions:
             await self.load_extension(ext)
