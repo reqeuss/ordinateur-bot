@@ -1,4 +1,4 @@
-# Ordinateur v2 — Le Café Virtuel ☕🤖
+# Ordinateur — Le Café Virtuel ☕🤖
 
 Bot Discord Python complet pour **Le Café Virtuel**.
 
