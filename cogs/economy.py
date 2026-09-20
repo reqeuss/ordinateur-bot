@@ -5,6 +5,30 @@ import random, time
 from config import CURRENCY_EMOJI, CURRENCY_NAME, DAILY_REWARD, WORK_COOLDOWN, FREE_COFFEE_COOLDOWN
 from utils import fmt_time, cooldown_text, money, item_price, item_display
 
+class InventorySelect(discord.ui.Select):
+    def __init__(self, cog, items):
+        self.cog = cog
+        options = []
+        for row in items:
+            display = item_display(row["item"])
+            options.append(discord.SelectOption(
+                label=display[:100],
+                value=row["item"],
+                description=f"Quantité : {row['amount']}"[:100],
+                emoji=display[0]
+            ))
+        super().__init__(placeholder="Choisis un objet à utiliser…", options=options)
+
+    async def callback(self, interaction):
+        await self.cog.use_item(interaction, self.values[0])
+
+
+class InventoryView(discord.ui.View):
+    def __init__(self, cog, items):
+        super().__init__(timeout=60)
+        self.add_item(InventorySelect(cog, items))
+
+
 class Economy(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -54,8 +78,7 @@ class Economy(commands.Cog):
         ]
         job, lo, hi, text = random.choice(jobs)
         amount = random.randint(lo,hi)
-        bonus = u["level"] * 2
-        total = amount + bonus
+        total = amount + u["level"] * 2
         await self.bot.db.change_money(interaction.guild.id, interaction.user.id, total)
         await self.bot.db.set_timestamp(interaction.guild.id, interaction.user.id, "last_work", int(time.time()))
         await interaction.response.send_message(f"{text}\n💼 Métier : **{job}**\n💰 Gain : **+{total}** 🍪")
@@ -68,12 +91,9 @@ class Economy(commands.Cog):
         def stat(last, cd):
             return "🟢 Disponible" if now-last >= cd else f"⏳ {fmt_time(cd-(now-last))}"
         await interaction.response.send_message(
-            f"⏱️ **Tes timers**\n"
-            f"💼 Work : {stat(u['last_work'], WORK_COOLDOWN)}\n"
-            f"🎁 Daily : {stat(u['last_daily'], 86400)}\n"
-            f"☕ Café offert : {stat(u['last_freecoffee'], FREE_COFFEE_COOLDOWN)}\n"
-            f"🎲 Crime : {stat(u['last_crime'], 3600)}\n"
-            f"🥷 Rob : {stat(u['last_rob'], 7200)}"
+            f"⏱️ **Tes timers**\n💼 Work : {stat(u['last_work'], WORK_COOLDOWN)}\n"
+            f"🎁 Daily : {stat(u['last_daily'], 86400)}\n☕ Café offert : {stat(u['last_freecoffee'], FREE_COFFEE_COOLDOWN)}\n"
+            f"🎲 Crime : {stat(u['last_crime'], 3600)}\n🥷 Rob : {stat(u['last_rob'], 7200)}"
         )
 
     @app_commands.command(name="freecoffee", description="Recevoir un café gratuit chaque jour.")
@@ -90,18 +110,13 @@ class Economy(commands.Cog):
     @app_commands.command(name="shop", description="Voir la boutique.")
     async def shop(self, interaction):
         desc = "\n".join([
-            f"☕ `cafe` — 50 🍪",
-            f"🥐 `croissant` — 75 🍪",
-            f"🍰 `gateau` — 120 🍪",
-            f"🍩 `donut` — 100 🍪",
-            f"🧋 `bubbletea` — 150 🍪",
-            f"🎁 `mysterybox` — 1 000 🍪",
-            f"💳 `vipcard` — 5 000 🍪",
+            "☕ `cafe` — 50 🍪", "🥐 `croissant` — 75 🍪", "🍰 `gateau` — 120 🍪",
+            "🍩 `donut` — 100 🍪", "🧋 `bubbletea` — 150 🍪", "🎁 `mysterybox` — 1 000 🍪",
+            "💳 `vipcard` — 5 000 🍪"
         ])
         await interaction.response.send_message(embed=discord.Embed(title="🛒 Boutique du Café", description=desc, color=discord.Color.gold()))
 
     @app_commands.command(name="buy", description="Acheter un objet dans la boutique.")
-    @app_commands.describe(item="Identifiant de l'objet", amount="Quantité")
     async def buy(self, interaction, item: str, amount: app_commands.Range[int,1,50]=1):
         if not await self.base(interaction): return
         price = item_price(item)
@@ -124,17 +139,14 @@ class Economy(commands.Cog):
         desc = "\n".join(f"{item_display(r['item'])} × **{r['amount']}**" for r in rows)
         await interaction.response.send_message(embed=discord.Embed(title="🎒 Inventaire", description=desc))
 
-    @app_commands.command(name="use", description="Utiliser un objet.")
-    async def use(self, interaction, item: str):
+    async def use_item(self, interaction, item):
         if not await self.base(interaction): return
         item = item.lower()
         if not await self.bot.db.remove_item(interaction.guild.id, interaction.user.id, item):
-            return await interaction.response.send_message("❌ Tu n'as pas cet objet.", ephemeral=True)
+            return await interaction.response.send_message("❌ Tu n'as plus cet objet dans ton inventaire.", ephemeral=True)
         rewards = {
-            "cafe": (20, 50, "☕ Café consommé !"),
-            "croissant": (30, 70, "🥐 Croissant dégusté !"),
-            "gateau": (50, 110, "🍰 Gâteau dégusté !"),
-            "donut": (35, 80, "🍩 Donut mangé !"),
+            "cafe": (20, 50, "☕ Café consommé !"), "croissant": (30, 70, "🥐 Croissant dégusté !"),
+            "gateau": (50, 110, "🍰 Gâteau dégusté !"), "donut": (35, 80, "🍩 Donut mangé !"),
             "bubbletea": (60, 130, "🧋 Bubble Tea dégusté !")
         }
         if item == "mysterybox":
@@ -142,13 +154,29 @@ class Economy(commands.Cog):
             await self.bot.db.change_money(interaction.guild.id, interaction.user.id, gain)
             return await interaction.response.send_message(f"🎁 Mystery Box ouverte : **+{gain}** 🍪 !")
         if item == "vipcard":
-            return await interaction.response.send_message("💳 Carte VIP activée pour cette utilisation !", ephemeral=True)
+            gain = random.randint(250, 750)
+            await self.bot.db.change_money(interaction.guild.id, interaction.user.id, gain)
+            return await interaction.response.send_message(f"💳 Carte VIP utilisée ! Bonus : **+{gain}** 🍪.")
         if item not in rewards:
+            await self.bot.db.add_item(interaction.guild.id, interaction.user.id, item)
             return await interaction.response.send_message("❌ Cet objet n'est pas utilisable.", ephemeral=True)
         lo, hi, text = rewards[item]
         gain = random.randint(lo,hi)
         await self.bot.db.change_money(interaction.guild.id, interaction.user.id, gain)
         await interaction.response.send_message(f"{text}\n✨ Bonus : **+{gain}** 🍪")
+
+    @app_commands.command(name="use", description="Choisir un objet de ton inventaire à utiliser.")
+    async def use(self, interaction):
+        if not await self.base(interaction): return
+        rows = await self.bot.db.get_inventory(interaction.guild.id, interaction.user.id)
+        usable = [r for r in rows if r["item"] in {"cafe","croissant","gateau","donut","bubbletea","mysterybox","vipcard"}]
+        if not usable:
+            return await interaction.response.send_message("🎒 Aucun objet utilisable dans ton inventaire.", ephemeral=True)
+        await interaction.response.send_message(
+            embed=discord.Embed(title="🎒 Utiliser un objet", description="Sélectionne directement l'objet que tu veux utiliser.", color=discord.Color.blurple()),
+            view=InventoryView(self, usable),
+            ephemeral=True
+        )
 
     @app_commands.command(name="pay", description="Donner des Cookies à un membre.")
     async def pay(self, interaction, member: discord.Member, amount: app_commands.Range[int,1,1000000]):
