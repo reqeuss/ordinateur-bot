@@ -68,9 +68,9 @@ class Server(commands.Cog):
             "🛡️ Modération":"`/warn` `/warnings` `/clearwarnings` `/clear` `/purgeuser` `/cleanup` `/kick` `/ban` `/unban` `/timeout` `/untimeout` `/nick` `/roleadd` `/roleremove` `/rolecreate` `/roledelete` `/slowmode` `/lock` `/unlock` `/serverlockdown` `/serverunlock` `/modlogs` `/automod`",
             "🎫 Serveur":"`/ticket` `/close` `/claim` `/partnership` `/serverinfo` `/userinfo` `/avatar` `/banner` `/roles` `/membercount` `/announce` `/embed` `/poll` `/suggest` `/say`",
             "🎉 Giveaways":"`/giveaway` `/reroll` `/giveawayend`",
-            "🤖 Autres":"`/ping` `&537UP`"
+            "🤖 Autres":"`/ping` `&537UP` `/flip` `/dice` `/rps` `/random` `/8ball` `/rate` `/choose` `/cookiegift`"
         }
         desc="\n\n".join(f"**{k}**\n{v}" for k,v in groups.items())
-        await interaction.response.send_message(embed=discord.Embed(title="🤖 Ordinateur v2 — Commandes",description=desc,color=discord.Color.blurple()))
+        await interaction.response.send_message(embed=discord.Embed(title="🤖 Commandes d’Ordinateur",description=desc,color=discord.Color.blurple()))
 
 async def setup(bot): await bot.add_cog(Server(bot))
