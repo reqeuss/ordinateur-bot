@@ -25,24 +25,38 @@ class GiveawayButton(discord.ui.View):
             )
 
         added = await self.cog.bot.db.enter_giveaway(message_id, interaction.user.id)
-        participants = await self.cog.bot.db.giveaway_entries(message_id)
-        embed = interaction.message.embeds[0].copy() if interaction.message.embeds else discord.Embed(title="🎉 GIVEAWAY")
-        count = len(participants)
-        field_index = next((i for i, field in enumerate(embed.fields) if field.name == "👥 Participants"), None)
-        if field_index is None:
-            embed.add_field(name="👥 Participants", value=f"**{count}**", inline=True)
-        else:
-            embed.set_field_at(field_index, name="👥 Participants", value=f"**{count}**", inline=True)
-        await interaction.message.edit(embed=embed)
+        # Acknowledge the interaction immediately so Discord does not time out
+        # while the message is being refreshed.
         await interaction.response.send_message(
             "🎉 Ta participation est enregistrée !" if added else "✅ Tu participes déjà à ce giveaway.",
             ephemeral=True,
         )
+        await self.cog.refresh_participant_count(interaction.message)
 
 
 class Giveaways(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    async def refresh_participant_count(self, message):
+        """Update the visible participant total on the giveaway embed."""
+        participants = await self.bot.db.giveaway_entries(message.id)
+        embed = message.embeds[0].copy() if message.embeds else discord.Embed(title="🎉 GIVEAWAY")
+        count = len(participants)
+        field_index = next(
+            (i for i, field in enumerate(embed.fields) if field.name == "👥 Participants"),
+            None,
+        )
+        if field_index is None:
+            embed.add_field(name="👥 Participants", value=f"**{count}**", inline=True)
+        else:
+            embed.set_field_at(
+                field_index, name="👥 Participants", value=f"**{count}**", inline=True
+            )
+        try:
+            await message.edit(embed=embed)
+        except discord.HTTPException:
+            pass
 
     async def finish_giveaway(self, message_id):
         rows = await self.bot.db.active_giveaways()
