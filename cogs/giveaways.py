@@ -3,6 +3,54 @@ from discord import app_commands
 from discord.ext import commands
 
 
+class LeaveGiveawayView(discord.ui.View):
+    def __init__(self, cog, message_id, channel_id, user_id):
+        super().__init__(timeout=60)
+        self.cog = cog
+        self.message_id = message_id
+        self.channel_id = channel_id
+        self.user_id = user_id
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "❌ Cette confirmation ne t'est pas destinée.", ephemeral=True
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="Oui, me désinscrire", emoji="🚪", style=discord.ButtonStyle.danger)
+    async def confirm_leave(self, interaction: discord.Interaction, button: discord.ui.Button):
+        removed = await self.cog.bot.db.remove_giveaway_entry(self.message_id, self.user_id)
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(
+            content=(
+                "✅ Tu as été désinscrit de ce giveaway."
+                if removed else "ℹ️ Tu ne participes déjà plus à ce giveaway."
+            ),
+            view=self,
+        )
+        channel = self.cog.bot.get_channel(self.channel_id)
+        if channel:
+            try:
+                message = await channel.fetch_message(self.message_id)
+                await self.cog.refresh_participant_count(message)
+            except discord.HTTPException:
+                pass
+        self.stop()
+
+    @discord.ui.button(label="Non, rester inscrit", emoji="🎉", style=discord.ButtonStyle.secondary)
+    async def cancel_leave(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(
+            content="🎉 Parfait, tu restes inscrit à ce giveaway !",
+            view=self,
+        )
+        self.stop()
+
+
 class GiveawayButton(discord.ui.View):
     def __init__(self, cog, message_id):
         super().__init__(timeout=None)
@@ -24,9 +72,17 @@ class GiveawayButton(discord.ui.View):
                 "❌ Ce giveaway est terminé ou n'est plus disponible.", ephemeral=True
             )
 
+        participant_ids = await self.cog.bot.db.giveaway_entries(message_id)
+        if interaction.user.id in participant_ids:
+            return await interaction.response.send_message(
+                "Tu participes déjà à ce giveaway. Veux-tu te désinscrire ?",
+                view=LeaveGiveawayView(
+                    self.cog, message_id, interaction.channel_id, interaction.user.id
+                ),
+                ephemeral=True,
+            )
+
         added = await self.cog.bot.db.enter_giveaway(message_id, interaction.user.id)
-        # Acknowledge the interaction immediately so Discord does not time out
-        # while the message is being refreshed.
         await interaction.response.send_message(
             "🎉 Ta participation est enregistrée !" if added else "✅ Tu participes déjà à ce giveaway.",
             ephemeral=True,
@@ -166,7 +222,6 @@ class Giveaways(commands.Cog):
         except (ValueError, discord.HTTPException):
             return await interaction.response.send_message("❌ Message introuvable.", ephemeral=True)
 
-        # Reroll uses the participants saved for the original giveaway.
         participant_ids = await self.bot.db.giveaway_entries(mid)
         users = []
         for user_id in participant_ids:
@@ -183,6 +238,5 @@ class Giveaways(commands.Cog):
 async def setup(bot):
     cog = Giveaways(bot)
     await bot.add_cog(cog)
-    # Re-register the persistent button view after restarts.
     for row in await bot.db.active_giveaways():
         bot.add_view(GiveawayButton(cog, row["message_id"]), message_id=row["message_id"])
