@@ -254,6 +254,15 @@ class Database:
             await db.commit()
             return cur.rowcount > 0
 
+    async def remove_giveaway_entry(self, message_id, user_id):
+        async with self.connect() as db:
+            cur = await db.execute(
+                "DELETE FROM giveaway_entries WHERE message_id=? AND user_id=?",
+                (message_id, user_id)
+            )
+            await db.commit()
+            return cur.rowcount > 0
+
     async def giveaway_entries(self, message_id):
         async with self.connect() as db:
             cur = await db.execute(
