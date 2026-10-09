@@ -40,7 +40,7 @@ DISCORD_TOKEN=TON_TOKEN
 Lance :
 
 ```powershell
-python bot.py
+python app.py
 ```
 
 ## Important
