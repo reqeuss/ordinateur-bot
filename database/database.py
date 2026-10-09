@@ -63,6 +63,11 @@ class Database:
                 end_at INTEGER,
                 ended INTEGER DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS giveaway_entries (
+                message_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                PRIMARY KEY (message_id, user_id)
+            );
             CREATE TABLE IF NOT EXISTS tickets (
                 channel_id INTEGER PRIMARY KEY,
                 guild_id INTEGER,
@@ -239,6 +244,23 @@ class Database:
         async with self.connect() as db:
             await db.execute("UPDATE giveaways SET ended=1 WHERE message_id=?", (message_id,))
             await db.commit()
+
+    async def enter_giveaway(self, message_id, user_id):
+        async with self.connect() as db:
+            cur = await db.execute(
+                "INSERT OR IGNORE INTO giveaway_entries(message_id,user_id) VALUES(?,?)",
+                (message_id, user_id)
+            )
+            await db.commit()
+            return cur.rowcount > 0
+
+    async def giveaway_entries(self, message_id):
+        async with self.connect() as db:
+            cur = await db.execute(
+                "SELECT user_id FROM giveaway_entries WHERE message_id=?",
+                (message_id,)
+            )
+            return [row[0] for row in await cur.fetchall()]
 
     async def save_ticket(self, channel_id, guild_id, owner_id, created_at):
         async with self.connect() as db:
