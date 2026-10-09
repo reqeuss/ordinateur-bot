@@ -16,53 +16,29 @@ class GiveawayButton(discord.ui.View):
         custom_id="ordinateur_giveaway_enter",
     )
     async def enter(self, interaction: discord.Interaction, button: discord.ui.Button):
-        try:
-            msg = interaction.message
-            if msg is None:
-                return await interaction.response.send_message(
-                    "❌ Message du giveaway introuvable.", ephemeral=True
-                )
-
-            # Add the reaction only if the member has not already entered.
-            reaction = discord.utils.get(msg.reactions, emoji="🎉")
-            already_entered = False
-            if reaction:
-                already_entered = any(
-                    user.id == interaction.user.id
-                    async for user in reaction.users()
-                )
-
-            if not already_entered:
-                await msg.add_reaction("🎉")
-
-            # Re-read reactions so the displayed count reflects the actual entries.
-            msg = await msg.channel.fetch_message(msg.id)
-            reaction = discord.utils.get(msg.reactions, emoji="🎉")
-            count = 0
-            if reaction:
-                count = sum(
-                    1 async for user in reaction.users() if not user.bot
-                )
-
-            embed = msg.embeds[0].copy() if msg.embeds else discord.Embed(title="🎉 GIVEAWAY")
-            embed.set_field_at(
-                0,
-                name="👥 Participants",
-                value=f"**{count}**",
-                inline=True,
-            ) if embed.fields and embed.fields[0].name == "👥 Participants" else embed.add_field(
-                name="👥 Participants", value=f"**{count}**", inline=True
+        message_id = interaction.message.id
+        rows = await self.cog.bot.db.active_giveaways()
+        giveaway = next((row for row in rows if row["message_id"] == message_id), None)
+        if giveaway is None:
+            return await interaction.response.send_message(
+                "❌ Ce giveaway est terminé ou n'est plus disponible.", ephemeral=True
             )
-            await msg.edit(embed=embed)
 
-            response = "🎉 Ta participation est enregistrée !" if not already_entered else "✅ Tu participes déjà à ce giveaway."
-            await interaction.response.send_message(response, ephemeral=True)
-        except discord.HTTPException:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "❌ Impossible de mettre à jour le giveaway. Vérifie les permissions du bot.",
-                    ephemeral=True,
-                )
+        added = await self.cog.bot.db.enter_giveaway(message_id, interaction.user.id)
+        participants = await self.cog.bot.db.giveaway_entries(message_id)
+        embed = interaction.message.embeds[0].copy() if interaction.message.embeds else discord.Embed(title="🎉 GIVEAWAY")
+        count = len(participants)
+        field_index = next((i for i, field in enumerate(embed.fields) if field.name == "👥 Participants"), None)
+        if field_index is None:
+            embed.add_field(name="👥 Participants", value=f"**{count}**", inline=True)
+        else:
+            embed.set_field_at(field_index, name="👥 Participants", value=f"**{count}**", inline=True)
+        await interaction.message.edit(embed=embed)
+        await interaction.response.send_message(
+            "🎉 Ta participation est enregistrée !" if added else "✅ Tu participes déjà à ce giveaway.",
+            ephemeral=True,
+        )
+
 
 class Giveaways(commands.Cog):
     def __init__(self, bot):
@@ -74,26 +50,31 @@ class Giveaways(commands.Cog):
         if not row:
             return
 
-        ch = self.bot.get_channel(row["channel_id"])
-        if not ch:
+        channel = self.bot.get_channel(row["channel_id"])
+        if not channel:
             await self.bot.db.end_giveaway(message_id)
             return
 
         try:
-            msg = await ch.fetch_message(message_id)
+            message = await channel.fetch_message(message_id)
         except discord.HTTPException:
             await self.bot.db.end_giveaway(message_id)
             return
 
-        reaction = discord.utils.get(msg.reactions, emoji="🎉")
-        users = [u async for u in reaction.users() if not u.bot] if reaction else []
-        count = len(users)
+        participant_ids = await self.bot.db.giveaway_entries(message_id)
+        eligible = []
+        for user_id in participant_ids:
+            try:
+                eligible.append(await self.bot.fetch_user(user_id))
+            except discord.HTTPException:
+                continue
 
-        if not users:
+        count = len(eligible)
+        if not eligible:
             text = "😢 Aucun participant."
         else:
-            winners = random.sample(users, min(row["winners"], len(users)))
-            text = "🎉 Gagnants : " + ", ".join(u.mention for u in winners) + f"\n🎁 Prix : **{row['prize']}**"
+            winners = random.sample(eligible, min(row["winners"], count))
+            text = "🎉 Gagnants : " + ", ".join(user.mention for user in winners) + f"\n🎁 Prix : **{row['prize']}**"
 
         embed = discord.Embed(
             title="🎉 GIVEAWAY TERMINÉ",
@@ -101,8 +82,8 @@ class Giveaways(commands.Cog):
             color=discord.Color.dark_gold(),
         )
         embed.add_field(name="👥 Participants", value=f"**{count}**", inline=True)
-        await msg.edit(embed=embed, view=None)
-        await ch.send(text)
+        await message.edit(embed=embed, view=None)
+        await channel.send(text)
         await self.bot.db.end_giveaway(message_id)
 
     @app_commands.command(name="giveaway", description="Créer un giveaway.")
@@ -115,15 +96,15 @@ class Giveaways(commands.Cog):
         prize: str,
         winners: app_commands.Range[int, 1, 20] = 1,
     ):
-        m = re.fullmatch(r"\s*(\d+)\s*([smhd])\s*", duration.lower())
-        if not m:
+        match = re.fullmatch(r"\s*(\d+)\s*([smhd])\s*", duration.lower())
+        if not match:
             return await interaction.response.send_message(
                 "❌ Durée invalide. Ex: `10m`, `2h`, `1d`.", ephemeral=True
             )
 
-        n = int(m.group(1))
-        unit = m.group(2)
-        seconds = n * {"s": 1, "m": 60, "h": 3600, "d": 86400}[unit]
+        amount = int(match.group(1))
+        unit = match.group(2)
+        seconds = amount * {"s": 1, "m": 60, "h": 3600, "d": 86400}[unit]
         if seconds < 10 or seconds > 604800:
             return await interaction.response.send_message(
                 "❌ Durée : 10 secondes à 7 jours.", ephemeral=True
@@ -136,7 +117,7 @@ class Giveaways(commands.Cog):
                 f"🎁 Prix : **{prize}**\n"
                 f"👑 Gagnants : **{winners}**\n"
                 f"⏰ Fin : <t:{end}:R>\n\n"
-                "Clique sur **Participer** ou réagis avec 🎉 !"
+                "Clique sur **Participer** pour rejoindre le tirage !"
             ),
             color=discord.Color.gold(),
         )
@@ -144,10 +125,9 @@ class Giveaways(commands.Cog):
         embed.set_footer(text=f"Créé par {interaction.user.display_name}")
 
         await interaction.response.defer()
-        msg = await interaction.channel.send(embed=embed, view=GiveawayButton(self, 0))
-        await msg.add_reaction("🎉")
+        message = await interaction.channel.send(embed=embed, view=GiveawayButton(self, 0))
         await self.bot.db.save_giveaway(
-            (msg.id, interaction.guild.id, interaction.channel.id, prize, winners, end, 0)
+            (message.id, interaction.guild.id, interaction.channel.id, prize, winners, end, 0)
         )
         await interaction.followup.send("🎉 Giveaway créé.", ephemeral=True)
 
@@ -155,12 +135,12 @@ class Giveaways(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def giveawayend(self, interaction: discord.Interaction, message_id: str):
         try:
-            mid = int(message_id)
+            message_id_int = int(message_id)
         except ValueError:
             return await interaction.response.send_message("❌ ID invalide.", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
-        await self.finish_giveaway(mid)
+        await self.finish_giveaway(message_id_int)
         await interaction.followup.send("🎉 Giveaway terminé.", ephemeral=True)
 
     @app_commands.command(name="reroll", description="Reroll un giveaway terminé.")
@@ -168,17 +148,27 @@ class Giveaways(commands.Cog):
     async def reroll(self, interaction: discord.Interaction, message_id: str):
         try:
             mid = int(message_id)
-            msg = await interaction.channel.fetch_message(mid)
+            message = await interaction.channel.fetch_message(mid)
         except (ValueError, discord.HTTPException):
             return await interaction.response.send_message("❌ Message introuvable.", ephemeral=True)
 
-        reaction = discord.utils.get(msg.reactions, emoji="🎉")
-        users = [u async for u in reaction.users() if not u.bot] if reaction else []
+        # Reroll uses the participants saved for the original giveaway.
+        participant_ids = await self.bot.db.giveaway_entries(mid)
+        users = []
+        for user_id in participant_ids:
+            try:
+                users.append(await self.bot.fetch_user(user_id))
+            except discord.HTTPException:
+                continue
         if not users:
-            return await interaction.response.send_message("❌ Aucun participant.", ephemeral=True)
+            return await interaction.response.send_message("❌ Aucun participant enregistré.", ephemeral=True)
 
         winner = random.choice(users)
         await interaction.response.send_message(f"🔄 Nouveau gagnant : {winner.mention} 🎉")
 
 async def setup(bot):
-    await bot.add_cog(Giveaways(bot))
+    cog = Giveaways(bot)
+    await bot.add_cog(cog)
+    # Re-register the persistent button view after restarts.
+    for row in await bot.db.active_giveaways():
+        bot.add_view(GiveawayButton(cog, row["message_id"]), message_id=row["message_id"])
